@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import axios from "axios";
 import MainLayout from "../../components/layout/MainLayout";
 import { DriverLocation } from "../../components/map/TrackingMap";
+import { useWebSocket } from "../../contexts/WebSocketContext";
 
 const TrackingMap = dynamic(() => import("../../components/map/TrackingMap"), {
   ssr: false,
@@ -14,7 +15,7 @@ export default function TrackingPage() {
   const [activeDrivers, setActiveDrivers] = useState<Record<string, DriverLocation>>({});
   const [driverNames, setDriverNames] = useState<Record<string, string>>({});
   const driverNamesRef = useRef<Record<string, string>>({});
-  const wsRef = useRef<WebSocket | null>(null);
+  const { subscribe } = useWebSocket();
 
   // 1. Fetch Users to map userId to name
   useEffect(() => {
@@ -41,64 +42,21 @@ export default function TrackingPage() {
 
   // 2. Connect to WebSocket for real-time locations
   useEffect(() => {
-    let ws: WebSocket | null = null;
-    let reconnectTimeout: NodeJS.Timeout;
-    let isIntentionalClose = false;
+    const unsubscribe = subscribe((data) => {
+      if (!data || !data.userId) return;
+      if (data.type === "issue") return; // Ignored here, handled in Header
 
-    const connectWS = () => {
-      // Connect to the real API on Render (or local if env is set)
-      const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "wss://trip-history-api.onrender.com/ws/tracking/all";
-      console.log("Attempting to connect WebSocket to:", wsUrl);
-      
-      ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
+      setActiveDrivers((prev) => ({
+        ...prev,
+        [data.userId]: {
+          ...data,
+          name: driverNamesRef.current[data.userId] || "Unknown Driver",
+        },
+      }));
+    });
 
-      ws.onopen = () => {
-        console.log("Connected to tracking WebSocket");
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          
-          if (!data || !data.userId) return;
-
-          setActiveDrivers((prev) => ({
-            ...prev,
-            [data.userId]: {
-              ...data,
-              name: driverNamesRef.current[data.userId] || "Unknown Driver",
-            },
-          }));
-        } catch (err) {
-          console.error("Failed to parse websocket message", err);
-        }
-      };
-      
-      ws.onerror = (error) => {
-        if (isIntentionalClose) return; // Ignore errors from React Strict Mode cleanup
-        console.error("WebSocket error state:", ws?.readyState);
-      };
-
-      ws.onclose = () => {
-        if (isIntentionalClose) return;
-        console.log("Disconnected from tracking WebSocket, retrying in 3s...");
-        reconnectTimeout = setTimeout(connectWS, 3000);
-      };
-    };
-
-    connectWS();
-
-    return () => {
-      isIntentionalClose = true;
-      clearTimeout(reconnectTimeout);
-      if (ws) {
-        ws.onclose = null;
-        ws.onerror = null; // Prevent error if closing while connecting
-        ws.close();
-      }
-    };
-  }, []); // Run once on mount
+    return unsubscribe;
+  }, [subscribe]);
 
   const driverCount = Object.keys(activeDrivers).length;
 
@@ -180,6 +138,7 @@ export default function TrackingPage() {
             )}
           </div>
         </div>
+
       </div>
     </MainLayout>
   );

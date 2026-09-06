@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Kanit } from "next/font/google";
 import "./globals.css";
 import Script from "next/script";
+import { WebSocketProvider } from "../contexts/WebSocketContext";
 
 const kanit = Kanit({
   subsets: ["thai", "latin"],
@@ -34,7 +35,9 @@ export default function RootLayout({
         />
       </head>
       <body className={`${kanit.variable} font-sans bg-light text-gray-800 antialiased`}>
-        {children}
+        <WebSocketProvider>
+          {children}
+        </WebSocketProvider>
       </body>
     </html>
   );
